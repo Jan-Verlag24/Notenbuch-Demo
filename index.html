@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notenbuch Test</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: #111;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Schwebende Steuerungselemente über dem Buch */
+        #controls {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 100;
+            background: rgba(20, 20, 20, 0.85);
+            padding: 10px 20px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border: 1px solid #444;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            color: white;
+        }
+
+        select {
+            padding: 8px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        #start-btn { background-color: #00ff44; color: black; }
+        #start-btn:hover:not(:disabled) { background-color: #00cc33; }
+
+        #stop-btn { background-color: #ff3333; color: white; }
+        #stop-btn:hover:not(:disabled) { background-color: #cc0000; }
+
+        button:disabled, select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Das Sichtfenster füllt jetzt die KOMPLETTE Seite aus */
+        #viewport {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #050505;
+            overflow: hidden;
+            box-shadow: inset 0 0 50px rgba(0,0,0,1);
+        }
+
+        /* Die grüne Abtastlinie geht über die gesamte Höhe */
+        #playhead {
+            position: absolute;
+            top: 0;
+            left: 300px;
+            width: 5px;
+            height: 100%;
+            background: #00ff44;
+            box-shadow: 0 0 15px #00ff44;
+            z-index: 10;
+        }
+
+        /* Das zentrierte, riesige Kartonnotenbuch */
+        #cardboard-book {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%) translateX(0px); /* Zentriert es vertikal */
+            height: 85vh; /* Nutzt fast die komplette Höhe der Seite */
+            background-color: #dfb770;
+            
+            /* NEU: Falten exakt alle 2 Takte (8 Schläge * 300px = 2400px) */
+            background-image: linear-gradient(90deg, 
+                rgba(0,0,0,0.3) 0%, 
+                rgba(0,0,0,0) 1.5%, 
+                rgba(0,0,0,0) 98.5%, 
+                rgba(0,0,0,0.45) 100%);
+            background-size: 2400px 100%;
+            will-change: transform;
+            transition: transform 0s linear;
+        }
+
+        /* Die transparenten Stanzlöcher */
+        .hole {
+            position: absolute;
+            background: rgba(15, 15, 15, 0.75);
+            border-radius: 6px;
+            box-shadow: inset 3px 3px 6px rgba(0,0,0,0.8), 1px 1px 1px rgba(255,255,255,0.15);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        <label for="song-select">Lied:</label>
+        <select id="song-select">
+            <option value="testsong">Test Song</option>
+            <option value="walzer">Decap Einlass-Walzer</option>
+            <option value="tonleiter">Kleine Test-Tonleiter</option>
+        </select>
+        
+        <button id="start-btn">Automat starten</button>
+        <button id="stop-btn" disabled>Stopp</button>
+        
+        <span id="status">Bereit. Bitte auf 'Automat starten' klicken!</span>
+    </div>
+
+    <div id="viewport">
+        <div id="playhead"></div>
+        <div id="cardboard-book"></div>
+    </div>
+
+    <script>
+        const songsList = [
+          {
+            "id": "testsong",
+            "title": "Test Song",
+            "bpm": 120,
+            "notes": [
+                // BASS
+                { "pitch": 36, "start": 1.0, "duration": 1 },
+                { "pitch": 43, "start": 2.0, "duration": 1 },
+                { "pitch": 36, "start": 3.0, "duration": 1 },
+                { "pitch": 36, "start": 4.0, "duration": 0.25 },
+                { "pitch": 38, "start": 4.25, "duration": 0.25 },
+                { "pitch": 40, "start": 4.50, "duration": 0.25 },
+                { "pitch": 41, "start": 4.75, "duration": 0.25 },
+                { "pitch": 36, "start": 5.0, "duration": 1 },
+                { "pitch": 43, "start": 6.0, "duration": 1 },
+                { "pitch": 36, "start": 7.0, "duration": 1 },
+                { "pitch": 43, "start": 8.0, "duration": 1 },
+
+                // CHORDS
+                { "pitch": 48, "start": 1.5, "duration": 0.5 },
+                { "pitch": 52, "start": 1.5, "duration": 0.5 },
+                { "pitch": 55, "start": 1.5, "duration": 0.5 },
+                { "pitch": 48, "start": 2.5, "duration": 0.5 },
+                { "pitch": 52, "start": 2.5, "duration": 0.5 },
+                { "pitch": 55, "start": 2.5, "duration": 0.5 },
+                { "pitch": 48, "start": 3.5, "duration": 0.5 },
+                { "pitch": 52, "start": 3.5, "duration": 0.5 },
+                { "pitch": 55, "start": 3.5, "duration": 0.5 },
+                { "pitch": 48, "start": 4.5, "duration": 0.5 },
+                { "pitch": 52, "start": 4.5, "duration": 0.5 },
+                { "pitch": 55, "start": 4.5, "duration": 0.5 },
+                { "pitch": 48, "start": 5.5, "duration": 0.5 },
+                { "pitch": 52, "start": 5.5, "duration": 0.5 },
+                { "pitch": 55, "start": 5.5, "duration": 0.5 },
+                { "pitch": 48, "start": 6.5, "duration": 0.5 },
+                { "pitch": 52, "start": 6.5, "duration": 0.5 },
+                { "pitch": 55, "start": 6.5, "duration": 0.5 },
+                { "pitch": 48, "start": 7.5, "duration": 0.5 },
+                { "pitch": 52, "start": 7.5, "duration": 0.5 },
+                { "pitch": 55, "start": 7.5, "duration": 0.5 },
+                { "pitch": 48, "start": 8.5, "duration": 0.5 },
+                { "pitch": 52, "start": 8.5, "duration": 0.5 },
+                { "pitch": 55, "start": 8.5, "duration": 0.5 },
+
+                // MELODY
+                { "pitch": 72, "start": 1.0, "duration": 0.5 },  // C5
+                { "pitch": 74, "start": 1.5, "duration": 0.5 },  // D5
+                { "pitch": 76, "start": 2.0, "duration": 0.5 },  // E5
+                { "pitch": 79, "start": 2.5, "duration": 0.5 },  // G5
+                { "pitch": 77, "start": 3.0, "duration": 1.0 },  // F5 (Hält länger)
+                
+                // Tonleiter-Lauf passend zu deinem Bass-Lauf
+                { "pitch": 76, "start": 4.0, "duration": 0.25 }, // E5
+                { "pitch": 74, "start": 4.25, "duration": 0.25 },// D5
+                { "pitch": 72, "start": 4.50, "duration": 0.25 },// C5
+                { "pitch": 74, "start": 4.75, "duration": 0.25 },// D5
+                
+                // Finale
+                { "pitch": 76, "start": 5.0, "duration": 0.5 },  // E5
+                { "pitch": 72, "start": 5.5, "duration": 0.5 },  // C5
+                { "pitch": 67, "start": 6.0, "duration": 1.0 },  // G4
+                { "pitch": 79, "start": 7.0, "duration": 1.0 },  // G5
+                { "pitch": 72, "start": 8.0, "duration": 1.5 }   // C5 (Schlusston)
+            ]
+          },
+          {
+            "id": "walzer",
+            "title": "Decap Einlass-Walzer",
+            "bpm": 140,
+            "notes": [
+                { "pitch": 60, "start": 0.0, "duration": 0.5 },
+                { "pitch": 64, "start": 0.5, "duration": 0.5 },
+                { "pitch": 67, "start": 1.0, "duration": 0.5 },
+                { "pitch": 72, "start": 1.5, "duration": 1.5 },
+                { "pitch": 67, "start": 3.0, "duration": 0.5 },
+                { "pitch": 64, "start": 3.5, "duration": 0.5 },
+                { "pitch": 60, "start": 4.0, "duration": 1.5 },
+                { "pitch": 67, "start": 5.5, "duration": 0.5 },
+                { "pitch": 72, "start": 6.0, "duration": 2.0 }
+            ]
+          },
+          {
+            "id": "tonleiter",
+            "title": "Kleine Test-Tonleiter",
+            "bpm": 110,
+            "notes": [
+                { "pitch": 60, "start": 0.0, "duration": 0.5 },
+                { "pitch": 62, "start": 0.5, "duration": 0.5 },
+                { "pitch": 64, "start": 1.0, "duration": 0.5 },
+                { "pitch": 65, "start": 1.5, "duration": 0.5 },
+                { "pitch": 67, "start": 2.0, "duration": 0.5 },
+                { "pitch": 69, "start": 2.5, "duration": 0.5 },
+                { "pitch": 71, "start": 3.0, "duration": 0.5 },
+                { "pitch": 72, "start": 3.5, "duration": 1.5 }
+            ]
+          }
+        ];
+
+        const PIXELS_PER_BEAT = 300; // 1 Beat = 300px. 2 Takte (8 Beats) = 2400px Faltenabstand.
+        const PLAYHEAD_X = 300;
+
+        let audioCtx = null;
+        let organInstrument = null;
+        let currentSong = null;
+        let isPlaying = false;
+        let startTime = 0;
+        let totalSongDurationSeconds = 0;
+        let activeAudioNodes = [];
+
+        const book = document.getElementById('cardboard-book');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const songSelect = document.getElementById('song-select');
+        const statusText = document.getElementById('status');
+
+        function buildDropdownMenu() {
+            songSelect.innerHTML = '';
+            songsList.forEach(song => {
+                const option = document.createElement('option');
+                option.value = song.id;
+                option.innerText = song.title;
+                songSelect.appendChild(option);
+            });
+        }
+
+        buildDropdownMenu();
+        selectSong(songsList[0].id);
+
+        async function initAudio() {
+            statusText.innerText = "Verbinde mit Sound-Server (Orgel wird geladen)...";
+            if (typeof Soundfont === 'undefined') {
+                throw new Error("Soundfont-Bibliothek konnte nicht geladen werden.");
+            }
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            organInstrument = await Soundfont.instrument(audioCtx, 'church_organ', { soundfont: 'FluidR3_GM' });
+        }
+
+        function selectSong(songId) {
+            currentSong = songsList.find(s => s.id === songId);
+            statusText.innerText = `Bereit: "${currentSong.title}"`;
+            
+            let maxBeat = 0;
+            currentSong.notes.forEach(note => {
+                if (note.start + note.duration > maxBeat) {
+                    maxBeat = note.start + note.duration;
+                }
+            });
+
+            const secondsPerBeat = 60 / currentSong.bpm;
+            totalSongDurationSeconds = maxBeat * secondsPerBeat;
+
+            generateHoles(currentSong, maxBeat);
+            resetBookPosition();
+            
+            if(audioCtx) {
+                startBtn.innerText = "Lied abspielen";
+            }
+        }
+
+        // 3. Löcher stanzen (Jetzt vollautomatisch zentriert und skaliert!)
+        function generateHoles(song, maxBeat) {
+            book.innerHTML = '';
+            
+            // 1. Finde heraus, was die höchste und tiefste Note im aktuellen Lied ist
+            let highestPitch = -Infinity;
+            let lowestPitch = Infinity;
+            
+            song.notes.forEach(note => {
+                if (note.duration === undefined) return;
+                if (note.pitch > highestPitch) highestPitch = note.pitch;
+                if (note.pitch < lowestPitch) lowestPitch = note.pitch;
+            });
+            
+            // Falls das Lied leer ist, Standardwerte setzen
+            if (highestPitch === -Infinity) { highestPitch = 72; lowestPitch = 48; }
+            
+            // Sicherheitsabstand: Wenn alle Töne gleich hoch sind
+            if (highestPitch === lowestPitch) { highestPitch += 6; lowestPitch -= 6; }
+            
+            // 2. Berechne, wie viel Platz wir im Buch haben (in Pixeln)
+            const bookHeight = book.clientHeight || 500;
+            const availableHeight = bookHeight * 0.7; // Nutzen 70% der Buchhöhe, um Ränder zu lassen
+            const pitchRange = highestPitch - lowestPitch;
+            
+            // Berechne die perfekte Spurhöhe für DIESES spezifische Lied
+            const rowHeight = Math.min(18, availableHeight / pitchRange); 
+            
+            // Berechne den oberen Startpunkt, damit alles vertikal perfekt in der Mitte sitzt
+            const middleOfBook = bookHeight / 2;
+            const middleOfNotes = (highestPitch + lowestPitch) / 2;
+
+            // 3. Löcher perfekt platziert zeichnen
+            song.notes.forEach(note => {
+                if (note.duration === undefined) return;
+
+                const hole = document.createElement('div');
+                hole.className = 'hole';
+                
+                // X-Position und Breite (unverändert)
+                const leftPosition = PLAYHEAD_X + (note.start * PIXELS_PER_BEAT);
+                const width = note.duration * PIXELS_PER_BEAT;
+                
+                hole.style.left = `${leftPosition}px`;
+                hole.style.width = `${width}px`;
+                
+                // Y-Position: Abstand von der mathematischen Mitte des Liedes aus berechnen
+                const distanceFromMiddle = middleOfNotes - note.pitch;
+                const topPosition = middleOfBook + (distanceFromMiddle * rowHeight) - (rowHeight / 2);
+                
+                hole.style.top = `${topPosition}px`;
+                hole.style.height = `${Math.max(6, rowHeight - 3)}px`; // Mindestens 6px hoch, damit man es sieht
+                
+                book.appendChild(hole);
+            });
+            
+            book.style.width = `${PLAYHEAD_X + (maxBeat * PIXELS_PER_BEAT) + 1200}px`;
+        }
+
+        function playSong() {
+            isPlaying = true;
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            songSelect.disabled = true;
+            
+            const secondsPerBeat = 60 / currentSong.bpm;
+            const now = audioCtx.currentTime;
+            activeAudioNodes = [];
+
+            currentSong.notes.forEach(note => {
+                if (note.duration === undefined) return;
+
+                const noteStart = now + (note.start * secondsPerBeat);
+                const noteDuration = note.duration * secondsPerBeat;
+                
+                const node = organInstrument.play(note.pitch, noteStart, { duration: noteDuration });
+                activeAudioNodes.push(node);
+            });
+            
+            startTime = performance.now();
+            statusText.innerText = `Spiele: ${currentSong.title}`;
+            animateScroll();
+        }
+
+        function animateScroll() {
+            if (!isPlaying) return;
+            
+            const elapsedTime = (performance.now() - startTime) / 1000;
+            
+            if (elapsedTime >= totalSongDurationSeconds) {
+                stopSong(true);
+                return;
+            }
+            
+            const secondsPerBeat = 60 / currentSong.bpm;
+            const elapsedBeats = elapsedTime / secondsPerBeat;
+            const currentX = -(elapsedBeats * PIXELS_PER_BEAT);
+            
+            // Nutzen der originalen Zentrierung via CSS kombiniert mit der X-Verschiebung
+            book.style.transform = `translateY(-50%) translateX(${currentX}px)`;
+            
+            requestAnimationFrame(animateScroll);
+        }
+
+        function stopSong(reachedEnd = false) {
+            isPlaying = false;
+            
+            activeAudioNodes.forEach(node => {
+                try { node.stop(); } catch(e) {}
+            });
+            activeAudioNodes = [];
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            songSelect.disabled = false;
+
+            if (reachedEnd) {
+                statusText.innerText = "Lied beendet.";
+                resetBookPosition();
+            } else {
+                statusText.innerText = "Abspielen gestoppt.";
+            }
+        }
+
+        function resetBookPosition() {
+            book.style.transform = "translateY(-50%) translateX(0px)";
+        }
+
+        startBtn.addEventListener('click', async () => {
+            if (!audioCtx) {
+                try {
+                    startBtn.disabled = true;
+                    await initAudio();
+                    startBtn.disabled = false;
+                    startBtn.innerText = "Lied abspielen";
+                    
+                    // Einmalig die Lochhöhen nach der ersten echten Größenberechnung korrigieren
+                    let maxBeat = 0;
+                    currentSong.notes.forEach(n => { if(n.start+n.duration > maxBeat) maxBeat = n.start+n.duration; });
+                    generateHoles(currentSong, maxBeat);
+
+                    playSong();
+                } catch (error) {
+                    statusText.style.color = "red";
+                    statusText.innerText = error.message;
+                    startBtn.disabled = false;
+                    startBtn.innerText = "Erneut versuchen";
+                    console.error(error);
+                }
+            } else {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                playSong();
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            stopSong(false);
+        });
+
+        songSelect.addEventListener('change', (e) => {
+            selectSong(e.target.value);
+        });
+
+        // Falls die Fenstergröße verändert wird, Löcher neu ausrichten
+        window.addEventListener('resize', () => {
+            if(currentSong) {
+                let maxBeat = 0;
+                currentSong.notes.forEach(n => { if(n.start+n.duration > maxBeat) maxBeat = n.start+n.duration; });
+                generateHoles(currentSong, maxBeat);
+            }
+        });
+    </script>
+</body>
+</html>
